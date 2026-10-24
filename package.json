@@ -1,6 +1,6 @@
 {
   "name": "yakui-studio",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Local procedural music editing workbench with a classic desktop interface and shared projects, MIDI exchange and selection-scoped multi-agent assistance",
   "type": "module",
   "license": "Apache-2.0",

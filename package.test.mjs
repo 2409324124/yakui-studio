@@ -20,7 +20,7 @@ test('browser launch uses platform-specific argv without shell interpolation',()
 });
 test('package is dependency-free with a bounded public artifact allowlist',async()=>{
  const p=JSON.parse(await readFile(new URL('./package.json',import.meta.url),'utf8'));
- assert.equal(p.bin['yakui-studio'],'bin/cli.mjs');assert.equal(p.license,'UNLICENSED');assert.equal(p.engines.node,'>=20');
+ assert.equal(p.bin['yakui-studio'],'bin/cli.mjs');assert.equal(p.license,'Apache-2.0');assert.equal(p.engines.node,'>=20');
  assert.equal(Object.keys(p.dependencies||{}).length,0);
  for(const file of ['server.mjs','core.mjs','audio.mjs','midi.mjs','app.mjs','index.html','proposal-schema.json','data/example-score.json','assets/yakui.png'])assert.ok(p.files.includes(file));
  assert.ok(!p.files.some(f=>f.includes('.runtime')||f.includes('evidence')||f.includes('test')||f.includes('*')));
