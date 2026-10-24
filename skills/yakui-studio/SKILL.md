@@ -9,13 +9,26 @@ description: 在 Yakui Studio 本地音乐工作台中制作、导入和人工�
 
 ## 启动与资源
 
-已安装 npm 包提供 `yakui-studio` 本地工作台；`yakui-studio --no-open` 只启动服务。`yakui-studio setup` 安装本技能及同级的 `procedural-chiptune`。技能被复制到其他目的地时，两者应仍是相邻文件夹。
+已安装 npm 包提供 `yakui-studio` 本地工作台；`yakui-studio --no-open` 只启动服务。`yakui-studio setup --agent codex|claude|opencode|all` 安装本技能及同级的 `procedural-chiptune`；默认 codex。目标分别为 `$CODEX_HOME/skills`（默认 `~/.codex/skills`）、`~/.claude/skills`、`~/.config/opencode/skills`（遵守 `XDG_CONFIG_HOME`）。`--skills-dir PATH` 指定单一目录，`--replace` 备份已有版本后安装。技能被复制到其他目的地时，两者应仍是相邻文件夹。
 
 - `yakui-studio music setup --profile basic`：建立分析／程序化合成所需 Python 环境。
 - `yakui-studio music setup --profile transcribe`：按需安装真实分轨与转谱依赖；首次分轨可能需要模型下载。
 - `music analyze/separate/transcribe/review/init/render` 调用随包 Python 工具；`music import` 将候选转成工作台工程。运行对应子命令 `--help` 确认当前参数，尤其转谱模式、输入输出路径和 BPM。
 
 若只安装了技能，仍可直接执行 [procedural-chiptune/scripts](../procedural-chiptune/scripts) 中工具；以该技能目录解析脚本和模板路径。Python 3.10+ 与 NumPy 支持基础合成；音频解码和 MP3 需要 FFmpeg。模型依赖见 [真实分轨与转谱](../procedural-chiptune/references/stem-transcription.md)。
+
+若 shell 找不到 `yakui-studio`，用 `npx --yes --package yakui-studio@0.3.0 yakui-studio --help`；后续命令同样在该前缀后追加参数。安装技能本身不会安装代理 CLI、登录账号或下载音乐模型。Codex 和 OpenCode 使用各自已有登录和模型配置；Claude Code 的内置候选接口预留为后续功能。工作台内候选模式关闭工具，外部代理通过下述 CLI 操作工程。
+
+## 外部代理操作当前工作台
+
+先运行 `yakui-studio project --help` 和 `yakui-studio project read`，读取当前工程、revision、轨道片段和浏览器选区。服务默认 `http://127.0.0.1:5240`；用 `YAKUI_STUDIO_URL` 指向用户实际打开的实例，不另建一个空白实例代替它。
+
+- `yakui-studio project selection` 读取选区，`project selection --file selection.json` 更新选区。
+- `yakui-studio project apply --file operations.json` 应用编辑。文件必须使用刚读到的 `projectId`、`baseRevision`，新的 `operationId` 和 `operations`；操作类型、字段和完整示例见 [工程 CLI 协议](references/project-cli.md)。版本冲突后重新读取并重新评估编辑，不能只换 revision 强行覆盖用户修改。
+- `yakui-studio project import input.json` 或 `input.mid` 导入；`project export output.json` 或 `output.mid` 导出。导入替换前先导出当前工程，保持用户已认可素材可恢复。
+- `yakui-studio project undo --revision N --project ID` 和 `redo --revision N --project ID` 操作同一服务的撤销历史。
+
+编辑后再次 `project read` 核对实际 revision 和音符，并告知用户改变的轨道／片段。工作台可立即看见同一工程的修改。仅写磁盘 JSON 不会自动改变已打开工程。
 
 ## 从参考到工程
 
@@ -29,7 +42,7 @@ description: 在 Yakui Studio 本地音乐工作台中制作、导入和人工�
 
 片段起点为全曲拍数，音符起点相对片段；时间单位都是四分音符拍。注意片段边界与跨段延音。工程编辑、撤销与重做会改变 revision。
 
-AI 修改使用明确的音符／时间选区，先生成候选、对照试听，再应用或丢弃；工程变更后重新生成过期候选。AI 编曲建议不构成参考音频的准确转谱证据。未配置 Codex 时仍可手工编辑、试听和导出。
+AI 修改使用明确的音符／时间选区，先生成候选、对照试听，再应用或丢弃；工程变更后重新生成过期候选。AI 编曲建议不构成参考音频的准确转谱证据。未配置可用代理时仍可手工编辑、试听和导出；不可用或认证失败必须如实报告。
 
 原创程序化音乐走 [procedural-chiptune](../procedural-chiptune/SKILL.md) 的 init/render 路线；改写模板动机，避免仅改 BPM。事件谱格式见 [score-format](../procedural-chiptune/references/score-format.md)。浏览器合成与 Python 渲染不是逐采样相同的母带。
 

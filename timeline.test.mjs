@@ -1,0 +1,27 @@
+import assert from 'node:assert/strict';
+import {beatToSeconds,secondsToBeat,durationSeconds} from './timeline.mjs';
+import {playbackPosition} from './audio.mjs';
+const p={bpm:120,tempoMap:[{beat:0,bpm:120},{beat:4,bpm:60},{beat:8,bpm:180}]};
+assert.equal(beatToSeconds(p,4),2);assert.equal(beatToSeconds(p,8),6);assert.equal(beatToSeconds(p,11),7);
+for(const b of [0,.25,3.9,4,5,7.9,8,12,100])assert.ok(Math.abs(secondsToBeat(p,beatToSeconds(p,b))-b)<1e-9);
+assert.equal(durationSeconds(p,3,6),2.5);
+const r={start:beatToSeconds(p,5),end:beatToSeconds(p,11),loopStart:beatToSeconds(p,2),loop:true};
+assert.equal(secondsToBeat(p,playbackPosition(4,r)),2);
+assert.equal(secondsToBeat(p,playbackPosition(5,r)),4);
+assert.equal(beatToSeconds({bpm:100},10),6);
+assert.throws(()=>beatToSeconds(p,-1));
+console.log('Timeline: tempo integration/inversion, crossing-note duration, resume and loop passed.');
+
+const {meterPosition,meterGrid,setInitialTempo}=await import('./timeline.mjs');
+const changing={bpm:120,meter:[4,4],meterMap:[{beat:0,meter:[4,4]},{beat:4,meter:[3,4]},{beat:10,meter:[6,8]}],tempoMap:[{beat:0,bpm:120},{beat:4,bpm:60}]};
+assert.deepEqual(meterGrid(changing,0,16,{barsOnly:true}).map(e=>[e.beat,e.bar]),[[0,1],[4,2],[7,3],[10,4],[13,5]]);
+assert.deepEqual(meterGrid(changing,10,13).map(e=>e.beat),[10,10.5,11,11.5,12,12.5]);
+assert.deepEqual(meterPosition(changing,11.75),{bar:4,beat:4,tick:480,meter:[6,8]});
+assert.equal(meterPosition(changing,4).bar,2);assert.equal(meterPosition(changing,10).beat,1);
+assert.deepEqual(meterGrid(changing,5.25,8).map(e=>[e.beat,e.isBar]),[[6,false],[7,true]]);
+const partial={meter:[4,4],meterMap:[{beat:2,meter:[3,4]}]};
+assert.deepEqual(meterGrid(partial,0,8,{barsOnly:true}).map(e=>[e.beat,e.bar,e.length]),[[0,1,2],[2,2,3],[5,3,3]]);
+setInitialTempo(changing,100);assert.equal(changing.bpm,100);assert.deepEqual(changing.tempoMap,[{beat:0,bpm:100},{beat:4,bpm:60}]);assert.equal(beatToSeconds(changing,6),4.4);
+const lateTempo={bpm:120,tempoMap:[{beat:4,bpm:60}]};setInitialTempo(lateTempo,90);assert.deepEqual(lateTempo.tempoMap,[{beat:0,bpm:90},{beat:4,bpm:60}]);
+assert.throws(()=>setInitialTempo(changing,0));assert.equal(changing.bpm,100);
+console.log('Meter/tempo editing: 4/4→3/4→6/8 rulers, denominator beats, partial bars and initial tempo updates passed.');

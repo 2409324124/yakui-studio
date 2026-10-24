@@ -25,3 +25,15 @@ test('npm-style symlink entry executes CLI',async()=>{
  const r=spawnSync(process.execPath,[bin,'--help'],{encoding:'utf8'});assert.equal(r.status,0);assert.match(r.stdout,/yakui-studio setup/);
  }finally{await rm(dir,{recursive:true,force:true});}
 });
+
+test('provider-specific discovery paths and explicit shared destination',async()=>{
+ const {skillDestinations}=await import('./bin/setup.mjs');
+ const options={home:'/test-home',env:{}};
+ assert.deepEqual(skillDestinations('all',undefined,options),['/test-home/.codex/skills','/test-home/.claude/skills','/test-home/.config/opencode/skills']);
+ assert.deepEqual(skillDestinations('all','/shared/skills',options),['/shared/skills']);
+ assert.deepEqual(skillDestinations('opencode',undefined,{home:'/test-home',env:{XDG_CONFIG_HOME:'/custom'}}),['/custom/opencode/skills']);
+ assert.throws(()=>skillDestinations('bogus',undefined,options),/Unknown agent/);
+ const dir=await mkdtemp(join(tmpdir(),'yakui-all-'));
+ try{await installSkills(['--agent','all','--skills-dir',dir]);assert.ok((await readdir(dir)).includes('yakui-studio'));}
+ finally{await rm(dir,{recursive:true,force:true});}
+});

@@ -4,18 +4,21 @@ import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, resolve } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { tmpdir } from 'node:os';
+import { tmpdir, homedir } from 'node:os';
+import {createProjectService} from './project-service.mjs';
+import {importScore} from './core.mjs';
+import {detectProviders,buildProviderSpec,parseProviderOutput} from './providers.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/index.html', ['index.html', 'text/html; charset=utf-8']],
-  ...['app.mjs', 'core.mjs', 'audio.mjs', 'midi.mjs'].map(f => ['/'+f, [f,'text/javascript; charset=utf-8']]),
+  ...['app.mjs', 'core.mjs', 'audio.mjs', 'midi.mjs', 'timeline.mjs', 'project-sync.mjs'].map(f => ['/'+f, [f,'text/javascript; charset=utf-8']]),
   ['/style.css', ['style.css', 'text/css; charset=utf-8']],
   ['/assets/yakui.png', ['assets/yakui.png','image/png']],
   ['/data/example-score.json', ['data/example-score.json','application/json; charset=utf-8']],
 ]);
-const MAX_BODY = 2 * 1024 * 1024;
+const MAX_BODY = 16 * 1024 * 1024;
 const ERROR_MESSAGES = {
   auth: 'Codex 登录不可用。请在终端运行 codex login，完成后重试。',
   timeout: 'AI 请求超时。工程未改变，可缩小选区后重试。',
@@ -89,7 +92,7 @@ function json(res,status,data){res.writeHead(status,{'Content-Type':'application
 async function body(req){
   assert(req.headers['content-type']?.split(';')[0].trim()==='application/json','需要 JSON 请求。',415);
   const buffers=[];let length=0;
-  for await (const chunk of req){length+=chunk.length;assert(length<=MAX_BODY,'请求超过 2 MiB。',413);buffers.push(chunk);}
+  for await (const chunk of req){length+=chunk.length;assert(length<=MAX_BODY,'请求超过 16 MiB。',413);buffers.push(chunk);}
   try{return JSON.parse(Buffer.concat(buffers).toString('utf8'));}catch{throw new RequestError('JSON 无法解析。');}
 }
 function probeCodex(command){const r=spawnSync(command,['--version'],{encoding:'utf8',timeout:3000,stdio:['ignore','pipe','ignore']});return !r.error && r.status===0;}
@@ -104,6 +107,9 @@ export function createStudioServer(options={}) {
   const root=options.root||ROOT;
   const codexCommand=options.codexCommand||process.env.YAKUI_CODEX_BIN||'codex';
   const installed=options.installed ?? probeCodex(codexCommand);
+  const providersPromise=options.providers ? Promise.resolve(options.providers) : options.installed!==undefined ? Promise.resolve([{id:'codex',label:'Codex',installed:options.installed}]) : detectProviders();
+  let projectPromise;
+  const getProjectService=()=>projectPromise ||= (async()=>createProjectService({directory:options.projectDir||join(options.runtimeDir||process.env.YAKUI_DATA_DIR||join(homedir(),'.local','share','yakui-studio'),'workbench'),initialProject:options.initialProject||importScore(JSON.parse(await readFile(join(root,'data/example-score.json'),'utf8')))}))();
   const jobs=new Map();
   const maxJobs=32;
   const timeoutMs=options.timeoutMs||180000;
@@ -116,20 +122,22 @@ export function createStudioServer(options={}) {
     await chmod(directory,0o700);return directory;
   })();
   const execute=options.execute || ((spec)=>{
-    const child=spawn(codexCommand,spec.args,{cwd:spec.cwd,env:childEnvironment(),stdio:['pipe','ignore','pipe'],detached:process.platform!=='win32'});
-    child.stdin.on('error',()=>{});
-    child.stdin.end(spec.prompt);
-    return child;
+    const child=spawn(spec.command,spec.args,{cwd:spec.cwd,env:spec.env,stdio:['pipe','pipe','pipe'],detached:process.platform!=='win32'});
+    child.stdin.on('error',()=>{});child.stdin.end(spec.input??'');return child;
   });
   const kill=(job)=>{
     if(!job.child || job.child.exitCode!==null && job.child.exitCode!==undefined)return;
     try{if(process.platform!=='win32' && job.child.pid)process.kill(-job.child.pid,'SIGTERM');else job.child.kill('SIGTERM');}catch{}
     const t=setTimeout(()=>{try{if(process.platform!=='win32' && job.child.pid)process.kill(-job.child.pid,'SIGKILL');else job.child.kill('SIGKILL');}catch{}},1500);t.unref();
   };
-  const publicJob=job=>({id:job.id,status:job.status,createdAt:job.createdAt,...(job.proposal?{proposal:job.proposal}:{}),...(job.error?{error:job.error}:{}),log:job.status==='running'?'Codex 正在编写所选乐句…':job.status==='done'?'候选已生成；等待试听与应用。':job.status==='cancelled'?'已取消，工程未改变。':''});
+  const publicJob=job=>({id:job.id,provider:job.provider,status:job.status,createdAt:job.createdAt,...(job.proposal?{proposal:job.proposal}:{}),...(job.error?{error:job.error}:{}),log:job.status==='running'?`${job.provider} 正在编写所选乐句…`:job.status==='done'?'候选已生成；等待试听与应用。':job.status==='cancelled'?'已取消，工程未改变。':''});
   async function startJob(data){
     assert(!closing,'服务正在关闭。',503);
-    assert(installed,'本机未找到 Codex。手工编辑仍可使用；安装并登录 Codex 后重启工作台。',503);
+    const provider=data.provider||'codex';
+    const available=(await providersPromise).find(p=>p.id===provider);
+    assert(available?.installed,`${available?.label||provider} 不可用：${available?.reason||'未安装或无法启动'}`,503);
+    if(data.projectId){const state=await (await getProjectService()).read();assert(data.projectId===state.project.id&&data.baseRevision===state.project.revision,'工程已变化，请刷新选区。',409);data={...data,project:state.project};}
+
     assert([...jobs.values()].filter(j=>j.status==='running').length<1,'已有 AI 请求正在运行，请等待或取消。',429);
     inspectRequest(data.project,data.selection,data.instruction);
     const core=await import(new URL('./core.mjs',import.meta.url));
@@ -140,25 +148,26 @@ export function createStudioServer(options={}) {
     const cwd=await mkdtemp(join(runtime,'ai-'));await chmod(cwd,0o700);
     const outputFile=join(cwd,'proposal.json');
     const id=randomUUID();
-    const job={id,status:'running',createdAt:new Date().toISOString(),child:null,proposal:null,error:null};
+    const job={id,provider,status:'running',createdAt:new Date().toISOString(),child:null,proposal:null,error:null};
     if(jobs.size>=maxJobs){const old=[...jobs.values()].find(j=>j.status!=='running');if(old)jobs.delete(old.id);}
     jobs.set(id,job);
-    const args=['exec','--ignore-user-config','--ephemeral','--disable','shell_tool','--disable','unified_exec','--disable','apps','--disable','browser_use','--disable','computer_use','-c','web_search="disabled"','--sandbox','read-only','--skip-git-repo-check','--color','never','--output-schema',join(ROOT,'proposal-schema.json'),'--output-last-message',outputFile,'-'];
-    let errText='';
+    const spec=await buildProviderSpec(provider,{prompt,cwd,outputFile,schemaPath:join(ROOT,'proposal-schema.json'),model:data.model});
+    if(provider==='codex')spec.command=codexCommand;
+    let errText='',stdout='';
     let timer;
     const cleanup=async()=>{clearTimeout(timer);await rm(cwd,{recursive:true,force:true}).catch(()=>{});};
     try{
-      job.child=execute({args,prompt,cwd,outputFile});
+      job.child=execute({...spec,prompt,cwd,outputFile});
+      job.child.stdout?.on('data',b=>{stdout+=b.toString();if(Buffer.byteLength(stdout)>4*1024*1024){job.error='AI 输出过大';job.status='error';kill(job);}});
       job.child.stderr?.on('data',b=>{errText=(errText+b.toString()).slice(-8192);});
       job.child.on('error',async()=>{if(job.status==='running'){job.status='error';job.error=ERROR_MESSAGES.failed;}await cleanup();});
       job.child.on('close',async(code)=>{
         if(job.status!=='running'){await cleanup();return;}
         try{
           if(code!==0)throw new Error(/not logged|unauthorized|401|authentication|login required/i.test(errText)?'auth':'failed');
-          const info=await stat(outputFile);if(info.size>1024*1024)throw new Error('invalid');
-          let proposal;try{proposal=JSON.parse(await readFile(outputFile,'utf8'));validateProposal(proposal,selection);core.applyProposal(structuredClone(project),selection,proposal);}catch{throw new Error('invalid');}
+          let proposal;try{proposal=await parseProviderOutput(provider,stdout,{outputFile});validateProposal(proposal,selection);core.applyProposal(structuredClone(project),selection,proposal);}catch(e){throw new Error(/authentication|HTTP 401|HTTP 403/i.test(e.message)?'auth':'invalid');}
           job.proposal=proposal;job.status='done';
-        }catch(e){job.status='error';job.error=ERROR_MESSAGES[e.message]||ERROR_MESSAGES.failed;}
+        }catch(e){job.status='error';job.error=e.message==='auth'?`${provider} 登录不可用，请在其 CLI 中登录后重试。`:e.message==='invalid'?ERROR_MESSAGES.invalid:`${provider} 未完成请求，请检查该 CLI 的登录、网络与模型配置；工程未改变。`;}
         await cleanup();
       });
       timer=setTimeout(()=>{if(job.status==='running'){job.status='error';job.error=ERROR_MESSAGES.timeout;kill(job);}},timeoutMs);timer.unref();
@@ -174,7 +183,12 @@ export function createStudioServer(options={}) {
       if(origin)assert(origin===`http://${req.headers.host}`,'不允许跨站请求。',403);
       if(['POST','DELETE','PUT','PATCH'].includes(req.method))assert(origin===`http://${req.headers.host}`,'修改操作需要同源请求。',403);
       const url=new URL(req.url,`http://${req.headers.host}`);
-      if(url.pathname==='/api/status' && req.method==='GET')return json(res,200,{codex:installed,auth:'not_checked',transport:'local-codex-exec',message:installed?'已找到 Codex；登录和网络将在生成时验证。':'未安装 Codex；手工编辑和试听仍可使用。'});
+      if(url.pathname==='/api/status' && req.method==='GET'){const providers=await providersPromise;return json(res,200,{codex:providers.some(p=>p.id==='codex'&&p.installed),providers,auth:'not_checked',transport:'local-agent-cli',message:'使用现有 CLI 登录；音乐编辑不需要模型。'});}
+      if(url.pathname==='/api/project'){const service=await getProjectService();if(req.method==='GET')return json(res,200,await service.read());if(req.method==='PUT')return json(res,200,await service.replace(await body(req)));}
+      if(url.pathname==='/api/selection'){const service=await getProjectService();if(req.method==='GET')return json(res,200,await service.read());if(req.method==='PUT')return json(res,200,await service.setSelection(await body(req)));}
+      const projectAction=url.pathname.match(/^\/api\/project\/(operations|undo|redo)$/);
+      if(projectAction&&req.method==='POST'){const service=await getProjectService();return json(res,200,await service[projectAction[1]==='operations'?'apply':projectAction[1]](await body(req)));}
+      if(url.pathname.startsWith('/vendor/')&&req.method==='GET'){const rel=url.pathname.slice(1);assert(/^vendor\/[a-zA-Z0-9_.\/-]+$/.test(rel)&&!rel.includes('..'),'文件不存在',404);const bytes=await readFile(join(root,rel));res.writeHead(200,{'Content-Type':'text/javascript; charset=utf-8','Cache-Control':'no-store'});return res.end(bytes);}
       if(url.pathname==='/api/ai' && req.method==='POST'){const job=await startJob(await body(req));return json(res,202,{id:job.id});}
       const jobMatch=url.pathname.match(/^\/api\/ai\/([a-f0-9-]{36})$/);
       if(jobMatch){const job=jobs.get(jobMatch[1]);assert(job,'请求不存在或已过期。',404);if(req.method==='GET')return json(res,200,publicJob(job));if(req.method==='DELETE'){if(job.status==='running'){job.status='cancelled';kill(job);}return json(res,200,publicJob(job));}throw new RequestError('不支持的操作。',405);}
@@ -185,7 +199,7 @@ export function createStudioServer(options={}) {
       res.writeHead(200,{'Content-Type':item[1],'Content-Length':bytes.length,'Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"});res.end(req.method==='HEAD'?undefined:bytes);
     }catch(e){if(!res.headersSent)json(res,e.status|| (e.code==='ENOENT'?404:500),{error:e.status?e.message:e.code==='ENOENT'?'文件不存在。':'本地服务发生错误。'});else res.end();}
   });
-  return {server,jobs, async close(){closing=true;for(const job of jobs.values())if(job.status==='running'){job.status='cancelled';kill(job);}await new Promise(r=>server.close(r));if(runtimePromise){const directory=await runtimePromise.catch(()=>null);if(directory)await rm(directory,{recursive:true,force:true}).catch(()=>{});}}};
+  return {server,jobs, async close(){closing=true;for(const job of jobs.values())if(job.status==='running'){job.status='cancelled';kill(job);}await new Promise(r=>server.close(r));if(projectPromise){const service=await projectPromise.catch(()=>null);await service?.close();}if(runtimePromise){const directory=await runtimePromise.catch(()=>null);if(directory)await rm(directory,{recursive:true,force:true}).catch(()=>{});}}};
 }
 
 if(process.argv[1] && resolve(process.argv[1])===fileURLToPath(import.meta.url)){

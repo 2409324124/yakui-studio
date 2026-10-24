@@ -1,7 +1,7 @@
 {
   "name": "yakui-studio",
-  "version": "0.2.0",
-  "description": "Local procedural music editing workbench with a classic desktop interface and selection-scoped Codex assistance",
+  "version": "0.3.0",
+  "description": "Local procedural music editing workbench with a classic desktop interface and shared projects, MIDI exchange and selection-scoped multi-agent assistance",
   "type": "module",
   "license": "UNLICENSED",
   "engines": {
@@ -26,12 +26,18 @@
     "DESIGN.md",
     "bin/setup.mjs",
     "music/",
-    "skills/"
+    "skills/",
+    "project-service.mjs",
+    "project-sync.mjs",
+    "providers.mjs",
+    "timeline.mjs",
+    "vendor/",
+    "bin/project.mjs"
   ],
   "scripts": {
     "start": "node bin/cli.mjs",
     "check": "node bin/cli.mjs --check",
-    "test": "node --test core.test.mjs transport.test.mjs midi.test.mjs server.test.mjs package.test.mjs setup.test.mjs music.test.mjs"
+    "test": "node --test core.test.mjs transport.test.mjs midi.test.mjs timeline.test.mjs server.test.mjs package.test.mjs setup.test.mjs music.test.mjs providers.test.mjs project-service.test.mjs"
   },
   "repository": {
     "type": "git",

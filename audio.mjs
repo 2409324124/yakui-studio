@@ -1,3 +1,4 @@
+import {beatToSeconds,secondsToBeat,durationSeconds} from './timeline.mjs';
 import {flattenProject,totalBeats,validateProject} from './core.mjs';
 const noiseCache=new WeakMap(), pulseCache=new WeakMap();
 const drummers=new Set(['kick','snare','hat','openhat','crash','tom']);
@@ -75,9 +76,9 @@ export class Player {
   async play(project,opts={}){
     validateProject(project);const {start,end}=range(project,opts);this.stop();const generation=this._generation;
     const c=await this.context();if(generation!==this._generation)return;
-    const beatSeconds=60/project.bpm, loopStart=opts.loopStart??start;
+    const loopStart=opts.loopStart??start;
     if(!Number.isFinite(loopStart)||loopStart<0||loopStart>start||loopStart>=end)throw new Error('循环起点无效');
-    const span=(end-start)*beatSeconds, loopSpan=(end-loopStart)*beatSeconds, events=eventsFor(project);
+    const span=durationSeconds(project,start,end), loopSpan=durationSeconds(project,loopStart,end), events=eventsFor(project);
     this._playing=true;this.onState('playing');const epoch=c.currentTime+.04;let scheduledUntil=epoch;
     this.onPosition(start);
     const tick=()=>{
@@ -92,12 +93,12 @@ export class Player {
           const cycleStart=cycle===0?start:loopStart;
           const a=Math.max(cycleStart,e.start),b=Math.min(end,e.start+e.duration);if(b<=a)continue;
           const cycleEpoch=cycle===0?epoch:epoch+span+(cycle-1)*loopSpan;
-          const at=cycleEpoch+(a-cycleStart)*beatSeconds;
-          if(at>=scheduledUntil-1e-8 && at<horizon-1e-8){const lateness=Math.max(0,now-at);const duration=(b-a)*beatSeconds-lateness;if(duration>0)schedule(c,this._output,e,Math.max(at,now),duration,(a-e.start)*beatSeconds+lateness,this._nodes);}
+          const at=cycleEpoch+durationSeconds(project,cycleStart,a);
+          if(at>=scheduledUntil-1e-8 && at<horizon-1e-8){const lateness=Math.max(0,now-at);const duration=durationSeconds(project,a,b)-lateness;if(duration>0)schedule(c,this._output,e,Math.max(at,now),duration,durationSeconds(project,e.start,a)+lateness,this._nodes);}
         }
       }
       scheduledUntil=Math.max(scheduledUntil,horizon);
-      this.onPosition(playbackPosition(Math.max(0,now-epoch)/beatSeconds,{start,end,loop:opts.loop,loopStart}));
+      this.onPosition(secondsToBeat(project,playbackPosition(Math.max(0,now-epoch),{start:beatToSeconds(project,start),end:beatToSeconds(project,end),loop:opts.loop,loopStart:beatToSeconds(project,loopStart)})));
     };
     tick();this._timer=setInterval(tick,25);
   }
@@ -105,11 +106,11 @@ export class Player {
   async previewNote(track,midi,duration=.3,velocity=.8){const c=await this.context();schedule(c,this._output,{...track,midi,velocity},c.currentTime+.005,duration,0,this._nodes);}
 }
 export async function renderWav(project,opts={}){
-  validateProject(project);const {start,end}=range(project,opts),seconds=(end-start)*60/project.bpm;
+  validateProject(project);const {start,end}=range(project,opts),seconds=durationSeconds(project,start,end);
   if(seconds>600)throw new Error('单次 WAV 导出最多 10 分钟，请缩小范围');
   const C=globalThis.OfflineAudioContext??globalThis.webkitOfflineAudioContext;if(!C)throw new Error('浏览器不支持离线音频导出');
   const sr=44100,c=new C(2,Math.ceil(seconds*sr),sr),out=output(c);
-  for(const e of eventsFor(project)){const a=Math.max(start,e.start),b=Math.min(end,e.start+e.duration);if(b>a)schedule(c,out,e,(a-start)*60/project.bpm,(b-a)*60/project.bpm,(a-e.start)*60/project.bpm);}
+  for(const e of eventsFor(project)){const a=Math.max(start,e.start),b=Math.min(end,e.start+e.duration);if(b>a)schedule(c,out,e,durationSeconds(project,start,a),durationSeconds(project,a,b),durationSeconds(project,e.start,a));}
   const buffer=await c.startRendering(),frames=buffer.length,bytes=new ArrayBuffer(44+frames*4),view=new DataView(bytes);
   const str=(offset,s)=>{for(let i=0;i<s.length;i++)view.setUint8(offset+i,s.charCodeAt(i));};
   str(0,'RIFF');view.setUint32(4,36+frames*4,true);str(8,'WAVE');str(12,'fmt ');view.setUint32(16,16,true);view.setUint16(20,1,true);view.setUint16(22,2,true);view.setUint32(24,sr,true);view.setUint32(28,sr*4,true);view.setUint16(32,4,true);view.setUint16(34,16,true);str(36,'data');view.setUint32(40,frames*4,true);

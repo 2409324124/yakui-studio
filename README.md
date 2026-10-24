@@ -1,79 +1,85 @@
-# Yakui Studio 0.2.0
+# Yakui Studio 0.3.0
 
-本地音乐工作台：程序化事件谱 → 手工编辑乐器片段与音符 → 选区 AI 候选 → 试听、应用、撤销。Win2000 风格的 Web 编辑区，由终端命令启动；不是纯字符 TUI。
+供人和 agent 共用的程序化音乐工作台。CLI 提供工程操作、MIDI 交换、合成与扒谱执行工具；浏览器提供复古可视化编辑。二者共享同一份工程，保留播放头、空格暂停续播和片段独奏编辑。
 
-## 一键安装 skill + 工作台
-
-需要 Node.js 20+ 和 npm。工作台无 npm 运行依赖。首次让 agent 执行：
+## 安装与 agent 入口
 
 ```sh
-npx --yes yakui-studio setup
+npx --yes yakui-studio@0.3.0
 ```
 
-这会下载工作台，并把 `yakui-studio` 与 `procedural-chiptune` 两个 skill 安装到 `${CODEX_HOME:-~/.codex}/skills`。新开 agent 会话即可发现；已有同名 skill 不覆盖，显式 `--replace` 会先备份。其他支持 SKILL.md 的 agent 可用 `setup --skills-dir /目标/skills`。
-
-启动工作台：
+常用命令可永久安装：`npm install -g yakui-studio@0.3.0`。让 agent 阅读 [Yakui Studio skill](skills/yakui-studio/SKILL.md)，然后按自己的宿主安装：
 
 ```sh
-npx --yes yakui-studio
+npx --yes yakui-studio@0.3.0 setup --agent codex
+npx --yes yakui-studio@0.3.0 setup --agent opencode
 ```
 
-希望长期保留命令：
+CLI 既能由 agent 调用，也能由人直接执行，不需要在终端里重做一套编排界面。Claude 的 skill 安装目标保留，内置 Claude 候选接口仍为后续功能。
+
+## 本地启动
+
+需要 Node.js 20+。工作台没有 npm 运行依赖；MIDI 编解码使用随源码提供的 MIT midi-file 小型模块，许可位于 vendor/midi-file。
 
 ```sh
-npm install -g yakui-studio
-yakui-studio setup
-yakui-studio
+node bin/cli.mjs --port 5250 --workspace ./local-project --no-open
 ```
 
-默认打开 http://127.0.0.1:5240/ 。`--no-open` 不自动开浏览器；`--port 5241` 更换端口；`--check` 检查 Node/Codex。Ctrl+C 关闭本次服务。本地开发可直接 `node bin/cli.mjs`。
+打开 http://127.0.0.1:5250/ 。`--check` 检查三个 agent 的可执行状态，不代表登录有效。未安装或未登录 agent 不影响编辑、播放和导入导出。服务仅监听回环地址。
 
-源码安装（需 Git）：`npm install -g github:2409324124/yakui-studio`。
+## 统一工程
 
-## Agent 扒谱与程序化音乐
+网页与 agent 共用工作台服务的工程。默认存放在 `~/.local/share/yakui-studio/workbench/project-state.json`；可用 `--workspace` 指定独立目录。工程和撤销历史原子保存到磁盘，重启可继续。旧浏览器草稿可手动恢复；不会静默覆盖共享工程。
 
-安装 skill 不会自动下载模型。基础合成只需 Python/NumPy；参考转谱再安装 CPU 分轨和 ONNX 转谱环境：
+外部 agent 用相同 CLI 读取当前工程和网页选区：
 
 ```sh
-yakui-studio music setup --profile basic
-yakui-studio music setup --profile transcribe
-yakui-studio music --help
+node bin/cli.mjs project read --url http://127.0.0.1:5250
+node bin/cli.mjs project selection --url http://127.0.0.1:5250
+node bin/cli.mjs project apply --file change.json --url http://127.0.0.1:5250
+node bin/cli.mjs project export output.mid --url http://127.0.0.1:5250
+node bin/cli.mjs project import input.mid --url http://127.0.0.1:5250
 ```
 
-工具包含参考分析、Demucs 真实分轨、Basic Pitch 复调候选、pYIN 单声部候选、带理由人工修订、候选谱导入、原创编曲模板和 WAV/循环/MP3 合成。FFmpeg 需在 PATH，或设置 `FFMPEG`；Python 环境独立于系统环境。模型首次使用需联网下载。
+修改文件包含 `projectId`、`baseRevision`、唯一 `operationId` 和 `operations`；从 read 的实际结果填入，不能猜版本。操作支持修改轨道、片段、音符和段落；选区约束防止越界写入。过期版本返回冲突，网页保留本地副本供保存，不静默覆盖别人的修改。完整格式与实例见 `skills/yakui-studio/SKILL.md` 和 `bin/cli.mjs project --help`。网页约每 1.2 秒同步外部修改，修改时停止旧音频快照。
 
-让 agent 读取已安装的 `yakui-studio` skill，按音频实际情况选择分轨和转谱，保留原始秒时间、置信信息和修订理由；将候选导入工作台后手工校订。模型候选不等于准确原谱，Demucs 的 `other` 不等于独立主旋律。未提供参考音频时可直接创作事件谱。参考录音与模型权重不随本包分发。
+## 三种 agent
 
-## 编辑
+```sh
+node bin/cli.mjs setup --agent codex
+node bin/cli.mjs setup --agent claude
+node bin/cli.mjs setup --agent opencode
+```
 
-- 示例为既有 Yakui 95 BPM、24 小节、13 声部的事件谱，原文件不修改。
-- 上方乐器轨道：选择、拖动、复制、删除片段；点击标尺定位后分割片段。可以新增乐器与片段。
-- 下方钢琴卷帘：双击新增音符，拖动移动，右边缘改变时值；Shift 多选或拖动空白框选。属性可精确修改音高、起拍、时值和力度，Enter 提交。
-- 调整音色、音量、声像、静音与独奏；拖动中间分隔条调整编排／卷帘面积。
-- 空格播放／暂停，再按从暂停位置继续。单击片段将播放头移到片段起点；片段循环保留当前播放位置，到末尾才回到片段开头。取消循环后从播放头播放全曲。编辑会停止旧播放快照，再播放即可听到修改。
-- 选中片段按 Ctrl/Cmd+Enter（或双击片段）进入二级片段编辑视图，只试听该片段；修改直接保留在工程中。Esc／返回编排退出。播放头在暂停时仍可见。
-- Ctrl/Cmd+Z 撤销，Shift+Ctrl/Cmd+Z 重做；Ctrl/Cmd+S 保存工程。
-- 打开旧 events JSON 或 Studio 工程 JSON。导出工程 JSON 保留片段、轨道与设置；事件谱供程序继续处理；MIDI 供其他音乐软件；WAV 使用当前浏览器合成器。
-- 浏览器自动保存草稿。需要长期保存请下载工程 JSON；更换端口／浏览器不会自动带入原草稿。
+也可 `--agent all`；已有同名 skill 默认不覆盖，显式 `--replace` 先备份。Skill 引导 agent 调用工程 CLI、程序化合成和扒谱流程；实际工作目录与服务 URL 应由当前启动实例提供。
 
-## AI 协作
+界面“选区协作”当前可选 Codex、OpenCode，以及可选模型。Claude Code 仅保留接口和 skill 安装目标，列为后续功能。使用各 CLI 已有登录，不创建统一 API key。仅把选区及有限音乐上下文发给所选后端；候选先试听、再手动应用。内置生成请求禁用工具，不操作已有 coding 会话。外部 agent 则通过 skill 使用工程 CLI，自行遵守其宿主审批规则。
 
-可选：本机安装并登录 Codex。手工编辑、试听、导出不需要模型或 token。
+本机实测：Codex 0.164.0 与 OpenCode 1.18.32 均已真实返回单音符候选。模型 ID 不写进发行默认值。模型输入留空时沿用用户自己的 CLI 配置；手动选择只保存在当前浏览器本地，不修改全局 OpenCode 配置。Claude Code 按本轮范围只保留接口，未做实机适配验收。
 
-选中音符，或设定片段内起止拍；输入修改要求，点击“生成修改候选”。模型收到所选音符及邻近的有限音乐上下文，不收到工程文件路径。候选可对照试听，用户点击应用才写入工程，之后仍可撤销。工程修改后旧候选失效。可取消正在执行的请求。
+## MIDI 与播放
 
-后端使用本机 Codex 登录，忽略自定义用户配置，关闭 shell／apps／browser／computer 工具并使用只读沙箱和结构化 JSON 输出。不修改已有 coding 会话。API 仅绑定回环地址，并校验 Host 和修改请求 Origin；临时任务目录不通过网页提供。
+“打开工程 / MIDI”接受工程 JSON、事件谱 JSON、SMF 0/1 MIDI；CLI 也可导入导出。支持多轨/多通道、重叠音符、速度与拍号变化；播放和 WAV 渲染按速度图计算，标尺显示拍号变化。
 
-## 合成与格式
+音符、轨道、tempo/meter 和 program、CC、pitch-bend 事件可保存在工程并重新导出 MIDI。当前芯片合成器不模拟完整 GM 音源，也不播放所有 CC/弯音语义；导入时会提示这些限制。Format 2、SMPTE 时间格式明确拒绝。导出 MIDI 不等于导出芯片音色，最终声音请导出 WAV。
 
-原生浏览器 Web Audio 按需合成脉冲、三角和噪声鼓声；只在主动导出 WAV 时生成音频文件。浏览器引擎不是原 Python 母带的逐采样复现。MIDI 保留音符、速度、拍号与分轨，芯片音色以本工作台试听/WAV为准。
+- 空格暂停后再次播放从原位置继续，播放头一直显示。
+- 选择片段定位到起点；Ctrl/Cmd+Enter 进入片段编辑与独奏，Esc 返回。
+- 音符可框选、移动、改变时值及力度；轨道支持音色、音量、声像、静音和独奏。
+- 修改可撤销/重做；保存工程导出可移动的 JSON 副本。
 
-时间单位是四分音符拍，片段有全曲起点，音符起点相对片段。工程更改、撤销和重做均递增 revision；AI 应用校验该版本。`core.mjs` 为数据和编辑核心，`audio.mjs` 为播放／导出，`midi.mjs` 为标准 MIDI 输出，`app.mjs` 为界面，`server.mjs` 为 AI 服务。
+## 重依赖按需安装
 
-## 已验证与限制
+启动编辑器、MIDI 和浏览器合成不安装 Python、FFmpeg、分轨模型或转谱模型。需要程序化离线合成或参考扒谱时，显式选择：
 
-本机已验证模型请求返回真实四音符候选并只修改目标片段；浏览器加载、实时播放和全曲 WAV 导出已执行。核心测试覆盖原谱1209音符保留、跨片段延音、分割／移动、撤销／重做、过期和越界AI拒绝。MIDI结构解析检查通过。后端与包启动器测试使用模拟模型并明确区分于真实AI验证。用户本轮确认停止扩展QA。
+```sh
+node bin/cli.mjs music setup --profile basic
+node bin/cli.mjs music setup --profile transcribe
+node bin/cli.mjs music --help
+```
 
-npm registry 发布状态以仓库发布说明为准；没有改游戏／原庭院／已发布观看器。原生 Windows/macOS 自动开浏览器路径已实现，但未实机验收。暂不支持导入 MIDI、录音、VST 或原生 DAW 工程。当前重点是事件谱手工修整与选区 AI 协作。
+基础合成为 Python/NumPy；转谱工具提供参考分析、真实分轨、Basic Pitch/pYIN 候选和人工修订记录。模型首次使用才下载，模型候选需要听辨校订。参考录音与模型权重不随工作台分发。
 
-设计参考：LMMS Song Editor/Piano Roll 与 Ardour Region Editor，详见 DESIGN.md。
+## 源码
+
+`core.mjs` 数据与操作；`project-service.mjs` 持久化、选区、修订和撤销；`project-sync.mjs` 网页同步；`providers.mjs` agent 协议；`midi.mjs` SMF 读写；`timeline.mjs` 时间映射；`audio.mjs` 浏览器合成；`app.mjs` 原生 UI；`music/` 按需音乐工具。自动化检查：`npm test`。工作台独立发布，不修改游戏、庭院或原观看器。

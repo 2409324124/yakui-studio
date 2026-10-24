@@ -1,3 +1,4 @@
+import {beatToSeconds} from './timeline.mjs';
 // Pure project model: beats in the arrangement, local beats inside every clip.
 export const uid = () => globalThis.crypto?.randomUUID?.() ?? `y-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 const copy = value => structuredClone(value);
@@ -14,6 +15,9 @@ export function validateProject(p) {
   assert(finite(p.bpm,20,400), 'BPM 必须在 20–400 之间');
   assert(Array.isArray(p.meter) && p.meter.length === 2 && Number.isInteger(p.meter[0]) && finite(p.meter[0],1,32) && [1,2,4,8,16,32].includes(p.meter[1]), '拍号无效');
   assert(Number.isInteger(p.bars) && finite(p.bars,1,1024), '小节数必须是 1–1024 的整数');
+  for (const [key,validate] of [['tempoMap',e=>finite(e.bpm,60000000/16777215,60000000)],['meterMap',e=>Array.isArray(e.meter)&&e.meter.length===2&&Number.isInteger(e.meter[0])&&finite(e.meter[0],1,255)&&Number.isInteger(Math.log2(e.meter[1]))&&finite(e.meter[1],1,128)]]) {
+    if(p[key]!==undefined){assert(Array.isArray(p[key]), '时间映射无效');let previous=-1;for(const e of p[key]){assert(e&&finite(e.beat,0,totalBeats(p))&&e.beat>previous&&validate(e),'时间映射无效');previous=e.beat;}}
+  }
   assert(Number.isSafeInteger(p.revision) && p.revision >= 0, '工程修订号无效');
   assert(Array.isArray(p.tracks) && p.tracks.length <= 128 && Array.isArray(p.clips) && p.clips.length <= 10000, '轨道或片段数量无效');
   const tracks = new Set(), ids = new Set(); let count = 0;
@@ -24,6 +28,8 @@ export function validateProject(p) {
     assert(finite(t.gain,0,2) && finite(t.pan,-1,1), '轨道音量或声像无效');
     assert(['pulse','triangle','sine','sawtooth','square','noise'].includes(t.wave), '不支持的波形');
     assert(finite(t.duty,.01,.99), '脉冲占空比无效');
+    if(t.midiEvents!==undefined){assert(Array.isArray(t.midiEvents)&&t.midiEvents.length<=100000,'MIDI 事件无效');for(const e of t.midiEvents){assert(e&&typeof e.type==='string'&&finite(e.beat,0,totalBeats(p)),'MIDI 事件时间无效');if(e.channel!==undefined)assert(Number.isInteger(e.channel)&&finite(e.channel,0,15),'MIDI 通道无效');}}
+
   }
   for (const c of p.clips) {
     unique(c.id); assert(tracks.has(c.trackId), '片段所属轨道不存在');
@@ -31,6 +37,7 @@ export function validateProject(p) {
     assert(Array.isArray(c.notes), '片段音符无效'); count += c.notes.length;
     for (const n of c.notes) {
       unique(n.id);
+      if(n.midiChannel!==undefined)assert(Number.isInteger(n.midiChannel)&&finite(n.midiChannel,0,15),'MIDI 音符通道无效');
       assert(finite(n.start,0,c.length) && finite(n.duration,.001,c.length) && n.start+n.duration <= c.length+1e-7, '音符超出片段范围');
       assert(Number.isInteger(n.midi) && finite(n.midi,0,127) && finite(n.velocity,0,2), '音高或力度无效');
     }
@@ -41,6 +48,8 @@ export function importScore(score) {
   if (score?.version === 1 && Array.isArray(score.tracks) && Array.isArray(score.clips)) return validateProject(copy(score));
   assert(score && Array.isArray(score.events), '请导入 Yakui 工程或包含 events 的事件谱');
   const p = {version:1,id:uid(),title:score.title || 'Untitled',bpm:score.bpm ?? 95,meter:score.meter ?? [4,4],bars:score.bars ?? Math.max(1,Math.ceil((score.beats ?? 16)/4)),revision:0,tracks:[],clips:[],sourceMetadata:{...copy(score),events:undefined}};
+  if(score.tempoMap)p.tempoMap=copy(score.tempoMap);
+  if(score.meterMap)p.meterMap=copy(score.meterMap);
   const end = totalBeats(p), bar = beatsPerBar(p);
   const boundaries = new Set([0,end]);
   for (const s of score.sections ?? []) if (Array.isArray(s.bars)) {
@@ -83,10 +92,10 @@ export function flattenProject(p) {
   const joined=[], tails=new Map();
   for(const e of events) {
     const key=`${e.trackId}:${e.sourceId}`, prev=tails.get(key);
-    if(e.sourceId && e.tieFromPrevious && prev && Math.abs(prev.start+prev.duration-e.start)<1e-7 && prev.midi===e.midi && prev.velocity===e.velocity && prev.duty===e.duty) prev.duration+=e.duration;
+    if(e.sourceId && e.tieFromPrevious && prev && Math.abs(prev.start+prev.duration-e.start)<1e-7 && prev.midi===e.midi && prev.midiChannel===e.midiChannel && prev.velocity===e.velocity && prev.duty===e.duty) prev.duration+=e.duration;
     else { joined.push(e); if(e.sourceId) tails.set(key,e); }
   }
-  return {...copy(p.sourceMetadata??{}),title:p.title,bpm:p.bpm,meter:copy(p.meter),bars:p.bars,beats:totalBeats(p),seconds:totalBeats(p)*60/p.bpm,voices:Object.fromEntries(p.tracks.map(t=>[t.voice,{...t.sourceSettings,gain:t.gain,pan:t.pan,duty:t.duty,wave:t.wave}])),events:joined};
+  return {...copy(p.sourceMetadata??{}),title:p.title,bpm:p.bpm,meter:copy(p.meter),bars:p.bars,beats:totalBeats(p),seconds:beatToSeconds(p,totalBeats(p)),tempoMap:copy(p.tempoMap??[]),meterMap:copy(p.meterMap??[]),voices:Object.fromEntries(p.tracks.map(t=>[t.voice,{...t.sourceSettings,gain:t.gain,pan:t.pan,duty:t.duty,wave:t.wave}])),events:joined};
 }
 export function createStore(initial) {
   let p=copy(validateProject(initial)), revision=p.revision; const past=[], future=[], listeners=new Set();

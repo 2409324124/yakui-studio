@@ -1,0 +1,1 @@
+midi-file 1.2.4, https://github.com/carter-thaxton/midi-file (MIT). Vendored parser/writer converted from CommonJS to ES modules; parser adds bounds checks for truncated input. No runtime dependencies.
