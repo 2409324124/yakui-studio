@@ -37,7 +37,7 @@ yakui-studio project import input.mid --url http://127.0.0.1:5250
 
 修改文件包含 `projectId`、`baseRevision`、唯一 `operationId` 和 `operations`；从 read 的实际结果填入，不能猜版本。操作支持修改轨道、片段、音符和段落；选区约束防止越界写入。过期版本返回冲突，网页保留本地副本供保存，不静默覆盖别人的修改。完整格式与实例见 `skills/yakui-studio/SKILL.md` 和 `bin/cli.mjs project --help`。网页约每 1.2 秒同步外部修改，修改时停止旧音频快照。
 
-## 三种 agent
+## Agent 接入与适配状态
 
 ```sh
 yakui-studio setup --agent codex
@@ -77,3 +77,32 @@ yakui-studio music --help
 ## 源码
 
 `core.mjs` 数据与操作；`project-service.mjs` 持久化、选区、修订和撤销；`project-sync.mjs` 网页同步；`providers.mjs` agent 协议；`midi.mjs` SMF 读写；`timeline.mjs` 时间映射；`audio.mjs` 浏览器合成；`app.mjs` 原生 UI；`music/` 按需音乐工具。自动化检查：`npm test`。工作台独立发布，不修改游戏、庭院或原观看器。
+
+## 升级与快捷键
+
+```sh
+npm install -g yakui-studio@latest
+```
+
+| 按键 | 操作 |
+| --- | --- |
+| Space | 暂停 / 从当前播放头继续 |
+| Ctrl / Cmd + Enter | 进入或退出选中片段编辑 |
+| Esc | 返回编排或取消音符选择 |
+| Ctrl / Cmd + Z | 撤销 |
+| Ctrl / Cmd + Shift + Z | 重做 |
+| Ctrl / Cmd + S | 下载工程 JSON |
+
+## 开发与平台验证
+
+```sh
+git clone https://github.com/2409324124/yakui-studio.git
+cd yakui-studio
+npm start
+```
+
+无需构建步骤；`npm test` 运行针对性检查。Linux 已实机验证，原生 Windows/macOS 尚未完成同等安装验收。关闭启动工作台的进程会停止本次本地服务。
+
+更多 CLI 参数见 `yakui-studio --help`、`yakui-studio project --help` 和 `yakui-studio music --help`；修改协议见 [工程 CLI 协议](../skills/yakui-studio/references/project-cli.md)。
+
+代码采用 [Apache-2.0](../LICENSE)，素材和第三方组件的许可范围见 [授权说明](../ASSET-LICENSES.md)。

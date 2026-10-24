@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "description": "Local procedural music editing workbench with a classic desktop interface and shared projects, MIDI exchange and selection-scoped multi-agent assistance",
   "type": "module",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "engines": {
     "node": ">=20"
   },
@@ -32,7 +32,10 @@
     "providers.mjs",
     "timeline.mjs",
     "vendor/",
-    "bin/project.mjs"
+    "bin/project.mjs",
+    "LICENSE",
+    "ASSET-LICENSES.md",
+    "docs/usage.md"
   ],
   "scripts": {
     "start": "node bin/cli.mjs",
