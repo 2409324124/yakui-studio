@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["summary", "notes"],
+  "properties": {
+    "summary": { "type": "string" },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["start", "duration", "midi", "velocity"],
+        "properties": {
+          "start": { "type": "number" },
+          "duration": { "type": "number" },
+          "midi": { "type": "integer" },
+          "velocity": { "type": "number" }
+        }
+      }
+    }
+  }
+}

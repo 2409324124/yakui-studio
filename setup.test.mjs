@@ -1,0 +1,27 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, readFile, writeFile, rm, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { installSkills } from './bin/setup.mjs';
+test('install bundled skills, protect local modifications, explicitly back up replacements',async()=>{
+ const dir=await mkdtemp(join(tmpdir(),'yakui-install-'));
+ try{
+  await installSkills(['--skills-dir',dir]);
+  assert.match(await readFile(join(dir,'yakui-studio/SKILL.md'),'utf8'),/name: yakui-studio/);
+  const file=join(dir,'procedural-chiptune/SKILL.md');await writeFile(file,'local customization');
+  await assert.rejects(installSkills(['--skills-dir',dir]),/already exists/);
+  assert.equal(await readFile(file,'utf8'),'local customization');
+  await installSkills(['--skills-dir',dir,'--replace']);
+  const backup=(await readdir(dir)).find(n=>n.startsWith('procedural-chiptune.backup-'));
+  assert.equal(await readFile(join(dir,backup,'SKILL.md'),'utf8'),'local customization');
+ }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+test('npm-style symlink entry executes CLI',async()=>{
+ const {symlink}=await import('node:fs/promises');const {spawnSync}=await import('node:child_process');
+ const dir=await mkdtemp(join(tmpdir(),'yakui-bin-'));
+ try{const bin=join(dir,'yakui-studio');await symlink(new URL('./bin/cli.mjs',import.meta.url).pathname,bin);
+ const r=spawnSync(process.execPath,[bin,'--help'],{encoding:'utf8'});assert.equal(r.status,0);assert.match(r.stdout,/yakui-studio setup/);
+ }finally{await rm(dir,{recursive:true,force:true});}
+});

@@ -1,0 +1,4 @@
+interface:
+  display_name: "程序化 8-bit 配乐"
+  short_description: "真实分轨、可校订转谱与芯片音色合成，制作可循环 BGM 和源码"
+  default_prompt: "用 $procedural-chiptune 根据这段参考制作一首有清晰主题和高潮的可循环 8-bit BGM，先给试听。"

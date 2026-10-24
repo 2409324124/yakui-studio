@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Yakui Studio — 乐谱工作台</title><link rel="stylesheet" href="style.css"></head>
+<body>
+<main class="window">
+<header class="titlebar"><span class="app-icon">♫</span><strong>Yakui Studio</strong><span id="window-title">乐谱工作台</span><span class="title-meta">LOCAL WORKSTATION</span></header>
+<nav class="menubar" aria-label="工程操作"><button id="open">打开工程…</button><button id="save">保存工程</button><button id="export-score">导出事件谱</button><button id="export-wav">导出 WAV…</button><span class="separator"></span><button id="undo">撤销</button><button id="redo">重做</button><span class="separator"></span><button id="help">操作说明</button><button id="toggle-inspector">属性 / AI</button><input id="file" type="file" accept=".json,application/json" hidden></nav>
+<section class="transport toolbar" aria-label="播放控制">
+<div class="transport-buttons"><button id="rewind" title="回到起点" aria-label="回到起点">|◀</button><button id="play" class="play" title="空格播放 / 暂停">▶ 播放</button><button id="stop" title="停止">■</button></div>
+<output id="position" class="lcd">001 : 01 : 000</output>
+<label>BPM <input id="tempo" type="number" min="30" max="300" value="95" aria-label="速度 BPM"></label>
+<label><input id="loop" type="checkbox" checked>片段循环</label>
+<span id="project-duration" class="transport-info"></span>
+<div class="toolbar-end"><span class="led"></span><span id="audio-status">就绪</span></div>
+</section>
+<div class="workspace">
+<div class="editors">
+<section class="pane arrangement-pane" aria-labelledby="arrangement-label">
+<div class="pane-title"><strong id="arrangement-label">01 · 编排 / Arrangement</strong><span id="project-name"></span></div>
+<div class="toolbar editor-toolbar"><button id="add-clip">＋ 片段</button><button id="duplicate-clip">复制片段</button><button id="split-clip">在播放头分割</button><button id="delete-clip">删除片段</button><button id="edit-clip" title="Ctrl / ⌘ + Enter">进入片段编辑 ↗</button><label class="toolbar-end">缩放 <select id="arr-zoom" aria-label="编排缩放"><option value="8">总览</option><option value="16">2×</option><option value="32">4×</option></select></label></div>
+<div id="arrangement" class="arrangement scrollwell" tabindex="0" aria-label="乐器分轨编排"></div>
+<div class="pane-foot"><span id="track-count"></span><span>拖动片段移动 · 点击标尺定位 · M 静音 / S 独奏</span></div>
+</section>
+<section class="pane piano-pane" aria-labelledby="piano-label">
+<div class="clip-focus-bar"><button id="back-arrangement" hidden>← 返回编排</button><span id="clip-focus-scope">整曲编排 · 选中片段定位 · Ctrl / ⌘ + Enter 单独编辑</span></div><div class="pane-title"><strong id="piano-label">02 · 钢琴卷帘 / Piano Roll</strong><span id="clip-title"></span></div>
+<div class="toolbar editor-toolbar"><button id="select-tool" class="pressed" aria-pressed="true">↖ 选择</button><button id="draw-tool" aria-pressed="false">✎ 绘音</button><button id="delete-notes">删除音符</button><button id="select-all">全选</button><label>吸附 <select id="snap" aria-label="音符吸附"><option value="0.25">1/16</option><option value="0.5">1/8</option><option value="1">1/4</option><option value="0.125">1/32</option><option value="0">自由</option></select></label><label class="toolbar-end">缩放 <select id="note-zoom" aria-label="钢琴卷帘缩放"><option value="44">1×</option><option value="66">1.5×</option><option value="88">2×</option></select></label></div>
+<div id="piano" class="piano scrollwell" tabindex="0" aria-label="音符编辑区域"></div>
+<div class="pane-foot"><span id="selection-count">未选择音符</span><span>双击新增 · 拖动移动 · 右沿调时值 · Shift 多选</span></div>
+</section>
+</div>
+<aside id="inspector" class="inspector">
+<div class="companion"><img src="assets/yakui.png" width="48" height="56" alt="六色 Yakui 女仆像素头像"><div><strong>YAKUI</strong><span>COMPOSITION DESK</span><p id="yakui-status">从一个片段开始。<br>让每个音符都可以修改。</p></div></div>
+<div class="inspector-body scrollwell">
+<section><h2>片段属性 <small>REGION</small></h2><div id="clip-properties"></div></section>
+<section><h2>音符属性 <small>NOTE</small></h2><div id="note-properties"></div></section>
+<section><h2>乐器与混音 <small>CHANNEL</small></h2><div id="track-properties"></div></section>
+<section class="ai-section"><h2>选区协作 <small>AI ASSIST</small></h2><p id="ai-connection" class="connection">正在检查本地 Codex…</p><div class="range-fields"><label>起拍<input id="range-start" aria-label="AI 选区起拍" type="number" min="0" step="0.25" value="0"></label><label>止拍<input id="range-end" aria-label="AI 选区止拍" type="number" min="0.25" step="0.25" value="16"></label></div><p id="ai-scope" class="hint"></p><label for="instruction">希望怎样修改选区？</label><textarea id="instruction" rows="3" placeholder="例如：保持前半句，后半句增加一个上行回应；不要改变片段长度。"></textarea><div class="button-row"><button id="ai-generate">生成修改候选</button><button id="ai-cancel" hidden>取消</button></div><div id="ai-progress" role="status"></div><div id="proposal" hidden><div id="proposal-summary"></div><div id="proposal-diff"></div><div class="button-row"><button id="audition-original">听原稿</button><button id="audition-proposal">听候选</button></div><div class="button-row"><button id="apply-proposal">应用候选</button><button id="discard-proposal">放弃</button></div></div><p class="hint">只发送所选乐谱与音乐上下文。候选不会自动覆盖工程；应用后仍可撤销。</p></section>
+</div>
+</aside>
+</div>
+<footer class="statusbar"><span id="status" role="status">载入工程…</span><span id="save-state">本地草稿</span><span>44.1 kHz · Stereo</span></footer>
+</main>
+<dialog id="help-dialog"><div class="titlebar"><strong>Yakui Studio · 操作说明</strong></div><div class="dialog-body"><h2>先编排片段，再修整音符</h2><p>上方每行是一件乐器，色块是独立片段。点击片段后，下方显示它的音符。片段与音符时间以四分音符拍为单位。</p><ul><li>拖动片段：按整拍移动。播放头置于片段内部后，可分割片段；复制生成独立副本。</li><li>双击空白或切换“绘音”：新增音符。拖动音符改变时间与音高，拖右边缘改变长度。</li><li>Shift 点击或拖空白框选：选择多个音符。右侧可精确修改音高、位置、时值、力度。</li><li>空格播放 / 暂停，暂停后从原位置继续；Delete 删除选中音符；Ctrl/Cmd+Z 撤销，Shift+Ctrl/Cmd+Z 重做；Ctrl/Cmd+S 保存。</li><li>点击片段将播放头移到片段起点。勾选“片段循环”后在当前片段循环，暂停继续不会回到起点；取消后播放整曲。点击标尺定位。</li><li>选中片段后 Ctrl/Cmd+Enter，或 Ctrl/Cmd+点击、双击片段进入二级编辑。此时仅试听这个片段，其余声部静音；Esc 或“返回编排”退出，编辑仍保留。</li><li>AI 选区：优先使用选中的音符，否则使用右侧起止拍范围。生成后先对照试听，再决定是否应用。</li></ul><p>修改自动存入本浏览器。请用“保存工程”下载 JSON 长期保存。旧事件谱 JSON 可直接打开。音频按需合成，仅导出时生成文件。</p><button id="close-help">关闭</button></div></dialog>
+<script type="module" src="app.mjs"></script>
+</body></html>
