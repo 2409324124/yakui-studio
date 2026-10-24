@@ -4,10 +4,10 @@
 
 ## 一键安装 skill + 工作台
 
-需要 Node.js 20+、npm 和 Git。工作台无 npm 运行依赖。首次让 agent 执行：
+需要 Node.js 20+ 和 npm。工作台无 npm 运行依赖。首次让 agent 执行：
 
 ```sh
-npx --yes --package=github:2409324124/yakui-studio yakui-studio setup
+npx --yes yakui-studio setup
 ```
 
 这会下载工作台，并把 `yakui-studio` 与 `procedural-chiptune` 两个 skill 安装到 `${CODEX_HOME:-~/.codex}/skills`。新开 agent 会话即可发现；已有同名 skill 不覆盖，显式 `--replace` 会先备份。其他支持 SKILL.md 的 agent 可用 `setup --skills-dir /目标/skills`。
@@ -15,20 +15,20 @@ npx --yes --package=github:2409324124/yakui-studio yakui-studio setup
 启动工作台：
 
 ```sh
-npx --yes --package=github:2409324124/yakui-studio yakui-studio
+npx --yes yakui-studio
 ```
 
 希望长期保留命令：
 
 ```sh
-npm install -g github:2409324124/yakui-studio
+npm install -g yakui-studio
 yakui-studio setup
 yakui-studio
 ```
 
 默认打开 http://127.0.0.1:5240/ 。`--no-open` 不自动开浏览器；`--port 5241` 更换端口；`--check` 检查 Node/Codex。Ctrl+C 关闭本次服务。本地开发可直接 `node bin/cli.mjs`。
 
-GitHub 安装入口先提供可用分发；npm registry 发布完成后可以使用 `npx yakui-studio setup`，发布前不要使用该短入口。
+源码安装（需 Git）：`npm install -g github:2409324124/yakui-studio`。
 
 ## Agent 扒谱与程序化音乐
 
